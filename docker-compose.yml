@@ -1,0 +1,98 @@
+version: '3'
+
+services:
+
+  reverse-proxy:
+    # The official v2 Traefik docker image
+    image: traefik:v2.2
+    # Enables the web UI and tells Traefik to listen to docker
+    command:
+      --api.insecure=true
+      --providers.docker
+      --providers.docker.exposedbydefault=false
+    ports:
+      # The HTTP port
+      - "80:80"
+      # The Web UI (enabled by --api.insecure=true)
+      - "8080:8080"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+
+  app:
+    restart: always
+    build:
+      context: .box/app/
+      args:
+        USER_ID: ${RUN_AS_USER:-1000}
+    ports:
+      - 8000
+    volumes:
+      - venv-data:/opt/venv
+      - ./:/app:delegated
+    networks:
+      - default
+    environment:
+      DJANGO_SETTINGS_MODULE: "project.settings"
+    env_file: ./.env
+    command: pipenv run start-dev
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${APP_HOSTNAME}`)"
+      - "traefik.http.services.app.loadbalancer.server.port=8000"
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  worker-1:
+    restart: always
+    build:
+      context: .box/app/
+      args:
+        USER_ID: ${RUN_AS_USER:-1000}
+    volumes:
+      - venv-data:/opt/venv
+      - ./:/app:delegated
+    environment:
+      DJANGO_SETTINGS_MODULE: "project.settings"
+    env_file: ./.env
+    command: pipenv run start-dev-worker-1
+    depends_on:
+      - rabbitmq
+
+  postgres:
+    restart: always
+    image: postgres:12
+    ports:
+      - "5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      TZ: 'Europe/Kiev'
+      PGTZ: 'Europe/Kiev'
+      POSTGRES_USER: ${APP_DB_USER}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_DB: ${APP_DB_NAME}
+
+  rabbitmq:
+    restart: always
+    image: bitnami/rabbitmq:3.8
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/bitnami
+    environment:
+      RABBITMQ_USERNAME: app
+      RABBITMQ_PASSWORD: app
+      RABBITMQ_VHOST: app
+
+volumes:
+  venv-data:
+    driver: local
+  postgres-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+

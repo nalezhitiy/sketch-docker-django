@@ -1,0 +1,48 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+Django = "*"
+psycopg2 = "*"
+whitenoise = "*"
+celery = "*"
+uvicorn = "*"
+
+[requires]
+python_version = "3.8"
+
+[scripts]
+start = "uvicorn --host 0.0.0.0 project.asgi:application"
+start-dev = "./manage.py runserver 0.0.0.0:8000"
+start-worker-1 = "celery -A project worker --prefetch-multiplier=1 --concurrency=3"
+start-dev-worker-1 = "celery -A project worker --prefetch-multiplier=1 --concurrency=3 -l DEBUG"
+restart-dev-worker = "celery -A project control shutdown"
+build = """sh -c '
+    ./manage.py collectstatic --no-input
+    python -m whitenoise.compress static/
+'
+"""
+build-dev = """sh -c '
+    ./manage.py collectstatic --no-input --clear
+    ./manage.py migrate --no-input
+'
+"""
+test = "./manage.py test"
+migrate = "./manage.py migrate"
+loaddata = "./manage.py loaddata fixtures/project.json"
+dumpdata = "./manage.py dumpdata -a -o fixtures/project.json"
+superuser_reset_passwd = """bash -c "
+    PASSW=$(date +%s | sha256sum | base64 | head -c 16)
+    echo \\"Reset superuser password to: ${PASSW}\\"
+    ./manage.py shell <<< \\"
+from django.contrib.auth.models import User
+u = User.objects.get(username='admin')
+u.set_password('${PASSW}')
+u.save()
+\\"
+"
+"""
